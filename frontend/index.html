@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CDM Adaptive Tutor</title>
+<!-- KaTeX for LaTeX math rendering -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+  onload="window._katexReady=true"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --surface2: #22263a; --border: #2e3354;
+    --accent: #6c63ff; --accent2: #a78bfa; --green: #34d399; --yellow: #fbbf24;
+    --red: #f87171; --orange: #fb923c; --text: #e2e8f0; --muted: #94a3b8;
+    --radius: 10px; --font: 'Segoe UI', system-ui, sans-serif;
+  }
+  body { font-family: var(--font); background: var(--bg); color: var(--text);
+    height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+  /* Header */
+  header { display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 24px; background: var(--surface); border-bottom: 1px solid var(--border);
+    flex-shrink: 0; }
+  .logo { font-size: 1.1rem; font-weight: 700; color: var(--accent2); }
+  .logo span { color: var(--muted); font-weight: 400; font-size: .85rem; margin-left: 8px; }
+  #student-badge { display: flex; align-items: center; gap: 10px; }
+  #student-badge input { background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); padding: 7px 14px; border-radius: 20px; font-size: .85rem;
+    outline: none; width: 180px; }
+  #student-badge input:focus { border-color: var(--accent); }
+  #start-btn { background: var(--accent); color: #fff; border: none; padding: 8px 18px;
+    border-radius: 20px; font-size: .85rem; cursor: pointer; font-weight: 600; transition: opacity .15s; }
+  #start-btn:hover { opacity: .85; }
+  #timewarp-btn {
+    background: transparent; color: var(--yellow); border: 1px solid var(--yellow);
+    padding: 7px 14px; border-radius: 20px; font-size: .8rem; cursor: pointer;
+    font-weight: 600; transition: background .15s, color .15s; white-space: nowrap;
+  }
+  #timewarp-btn:hover { background: var(--yellow); color: #000; }
+  #timewarp-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+  /* Main layout */
+  main { display: flex; flex: 1; overflow: hidden; }
+
+  /* Sidebar */
+  #sidebar { width: 270px; flex-shrink: 0; background: var(--surface);
+    border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+  #sidebar h2 { padding: 16px 18px 10px; font-size: .8rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 1px; color: var(--muted); flex-shrink: 0; }
+  #journey-list { flex: 1; overflow-y: auto; padding: 0 10px 16px; }
+
+  .journey-item { display: flex; flex-direction: column; gap: 5px; padding: 10px 12px;
+    margin-bottom: 4px; border-radius: var(--radius); cursor: pointer;
+    border: 1px solid transparent; transition: background .15s, border-color .15s; position: relative; }
+  /* ALL items are now clickable — locked ones just show at reduced opacity */
+  .journey-item:hover { background: var(--surface2); }
+  .journey-item.active { background: var(--surface2); border-color: var(--accent); }
+  .journey-item.next-up { border-color: var(--accent2); }
+  .journey-item.locked { opacity: .5; }
+  .ji-header { display: flex; align-items: center; justify-content: space-between; }
+  .ji-name { font-size: .88rem; font-weight: 600; }
+  .ji-pct { font-size: .75rem; font-weight: 700; }
+  .ji-badge { font-size: .65rem; font-weight: 700; padding: 2px 7px; border-radius: 20px;
+    text-transform: uppercase; letter-spacing: .5px; align-self: flex-start; }
+  .badge-MASTERED     { background: #064e3b; color: var(--green); }
+  .badge-LEARNING     { background: #1e1b4b; color: var(--accent2); }
+  .badge-NEEDS_REVIEW { background: #451a03; color: var(--yellow); }
+  .badge-COLLAPSED    { background: #450a0a; color: var(--red); }
+  .badge-LOCKED       { background: #1e293b; color: var(--muted); }
+  .ji-bar-wrap { height: 4px; background: var(--border); border-radius: 2px; }
+  .ji-bar { height: 4px; border-radius: 2px; transition: width .4s; }
+  .bar-MASTERED     { background: var(--green); }
+  .bar-LEARNING     { background: var(--accent); }
+  .bar-NEEDS_REVIEW { background: var(--yellow); }
+  .bar-COLLAPSED    { background: var(--red); }
+  .bar-LOCKED       { background: var(--muted); }
+  .next-arrow { position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+    font-size: .7rem; color: var(--accent2); display: none; }
+  .journey-item.next-up .next-arrow { display: block; }
+
+  /* Content panel */
+  #content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  #welcome { flex: 1; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 14px; color: var(--muted); text-align: center; padding: 40px; }
+  #welcome .icon { font-size: 3rem; }
+  #welcome h3 { font-size: 1.2rem; color: var(--text); }
+  #welcome p  { font-size: .9rem; max-width: 360px; }
+
+  #concept-panel { display: none; flex-direction: column; height: 100%; overflow: hidden; }
+
+  /* Tabs + concept title */
+  #tab-bar { display: flex; align-items: center; border-bottom: 1px solid var(--border);
+    flex-shrink: 0; padding: 0 20px; background: var(--surface); gap: 4px; }
+  #concept-title { font-size: .9rem; font-weight: 700; color: var(--accent2);
+    margin-right: 16px; white-space: nowrap; }
+  .tab-btn { background: none; border: none; color: var(--muted); padding: 14px 18px 12px;
+    font-size: .85rem; cursor: pointer; font-family: var(--font); font-weight: 500;
+    border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color .15s, border-color .15s; }
+  .tab-btn.active { color: var(--accent2); border-bottom-color: var(--accent2); }
+  .tab-btn:hover { color: var(--text); }
+
+  /* Tab panes */
+  .tab-pane { display: none; flex: 1; overflow-y: auto; padding: 24px 28px; }
+  .tab-pane.active { display: block; }
+
+  /* Loading state with timer */
+  .loading-box { display: flex; align-items: center; gap: 14px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 18px 22px; margin-top: 20px; }
+  .spinner { width: 20px; height: 20px; border: 2px solid var(--border);
+    border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; flex-shrink: 0; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text { display: flex; flex-direction: column; gap: 3px; }
+  .loading-label { font-size: .9rem; color: var(--text); }
+  .loading-timer { font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  /* Lesson content */
+  #lesson-content { line-height: 1.75; font-size: .93rem; }
+  #lesson-content h1, #lesson-content h2, #lesson-content h3 { color: var(--accent2); margin: 16px 0 8px; }
+  #lesson-content code { background: var(--surface2); border-radius: 4px; padding: 2px 6px;
+    font-family: 'Courier New', monospace; font-size: .85rem; }
+  #lesson-content pre { background: var(--surface2); border-radius: var(--radius);
+    padding: 14px 18px; margin: 12px 0; overflow-x: auto; }
+  #lesson-content pre code { background: none; padding: 0; }
+  #lesson-content strong { color: #f1f5f9; }
+  #lesson-content ul, #lesson-content ol { padding-left: 22px; margin: 8px 0; }
+  #lesson-content li { margin: 4px 0; }
+  #lesson-content blockquote { border-left: 3px solid var(--accent); padding-left: 14px;
+    margin: 12px 0; color: var(--muted); }
+  #ask-question-btn { margin-top: 20px; background: var(--accent); color: #fff; border: none;
+    padding: 10px 22px; border-radius: 8px; font-size: .88rem; cursor: pointer;
+    font-weight: 600; transition: opacity .15s; }
+  #ask-question-btn:hover { opacity: .85; }
+
+  /* Question pane */
+  #question-box { background: var(--surface2); border-radius: var(--radius);
+    padding: 20px 22px; margin-bottom: 16px; border: 1px solid var(--border); }
+  #question-text { font-size: .95rem; line-height: 1.6; margin-bottom: 10px; }
+  #hint-text { font-size: .82rem; color: var(--muted); cursor: pointer; user-select: none; }
+  #hint-text span.hint-label { color: var(--accent2); font-weight: 600; }
+  #hint-reveal { display: none; margin-top: 4px; font-style: italic; }
+  #answer-area textarea { width: 100%; min-height: 90px; background: var(--surface);
+    border: 1px solid var(--border); color: var(--text); padding: 12px 14px;
+    border-radius: var(--radius); font-size: .9rem; font-family: var(--font); resize: vertical; outline: none; }
+  #answer-area textarea:focus { border-color: var(--accent); }
+  #submit-btn { margin-top: 12px; background: var(--accent); color: #fff; border: none;
+    padding: 10px 26px; border-radius: 8px; font-size: .9rem; cursor: pointer;
+    font-weight: 600; transition: opacity .15s; }
+  #submit-btn:hover { opacity: .85; }
+  #submit-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* Locked practice notice */
+  #locked-notice { background: var(--surface2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 28px 24px; text-align: center; margin-top: 20px; }
+  #locked-notice .lock-icon { font-size: 2rem; margin-bottom: 10px; }
+  #locked-notice h3 { color: var(--text); margin-bottom: 8px; }
+  #locked-notice p { color: var(--muted); font-size: .88rem; line-height: 1.6; }
+  #locked-notice .prereq-list { margin-top: 12px; display: flex; flex-wrap: wrap;
+    gap: 8px; justify-content: center; }
+  #locked-notice .prereq-chip { background: #1e293b; color: var(--accent2);
+    padding: 4px 12px; border-radius: 20px; font-size: .82rem; font-weight: 600; }
+
+  /* AI Console (live thinking panel) */
+  #ai-console { display: none; margin-top: 16px; border: 1px solid var(--border);
+    border-radius: var(--radius); overflow: hidden; font-family: 'Courier New', monospace; }
+  .console-titlebar { display: flex; align-items: center; gap: 8px; padding: 8px 14px;
+    background: var(--surface2); border-bottom: 1px solid var(--border); }
+  .console-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .console-dot.red    { background: #ff5f57; }
+  .console-dot.yellow { background: #ffbd2e; }
+  .console-dot.green  { background: #28c840; }
+  #console-phase-badge { font-size: .72rem; font-weight: 700; padding: 2px 9px;
+    border-radius: 10px; background: var(--accent); color: #fff; margin-left: 4px; }
+  #console-phase-label { font-size: .78rem; color: var(--muted); flex: 1; }
+  #console-body { max-height: 260px; overflow-y: auto; padding: 10px 14px; background: #0a0c12;
+    scroll-behavior: smooth; }
+  .cl-status { color: #64748b; font-size: .75rem; margin: 3px 0;
+    display: flex; align-items: flex-start; gap: 6px; }
+  .cl-status .cl-icon { color: var(--accent2); flex-shrink: 0; }
+  .cl-thinking { color: #334155; font-size: .73rem; line-height: 1.55; display: inline;
+    word-break: break-word; }
+  .cl-writing  { color: #a5b4fc; font-size: .75rem; line-height: 1.55; display: inline;
+    word-break: break-word; }
+  .cl-block { margin: 4px 0; }
+  .cl-label { font-size: .67rem; font-weight: 700; letter-spacing: 1px;
+    padding: 1px 6px; border-radius: 3px; display: inline-block; margin-bottom: 3px; }
+  .cl-label.thinking { background: #1e293b; color: #475569; }
+  .cl-label.writing  { background: #1e1b4b; color: #818cf8; }
+
+  /* Feedback */
+  #feedback-panel { margin-top: 18px; border-radius: var(--radius); padding: 18px 20px;
+    display: none; border: 1px solid var(--border); }
+  #feedback-panel.correct   { background: #052e16; border-color: var(--green); }
+  #feedback-panel.incorrect { background: #450a0a; border-color: var(--red); }
+  .feedback-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .feedback-icon { font-size: 1.4rem; }
+  .feedback-title { font-weight: 700; font-size: .95rem; }
+  #feedback-text { font-size: .88rem; line-height: 1.6; }
+  #explanation-text { margin-top: 10px; font-size: .85rem; line-height: 1.6; color: var(--muted);
+    background: rgba(0,0,0,.2); padding: 10px 14px; border-radius: 7px; }
+  #weight-delta { margin-top: 10px; font-size: .8rem; color: var(--muted); }
+  #collapsed-warning { margin-top: 12px; padding: 10px 14px; background: #451a03;
+    border: 1px solid var(--orange); border-radius: 8px; font-size: .83rem; color: var(--orange); }
+  #next-btn { margin-top: 14px; background: var(--surface2); color: var(--accent2);
+    border: 1px solid var(--accent); padding: 8px 20px; border-radius: 8px;
+    font-size: .85rem; cursor: pointer; font-weight: 600; transition: background .15s; }
+  #next-btn:hover { background: var(--accent); color: #fff; }
+  #retry-btn { margin-top: 14px; margin-right: 10px; background: transparent; color: var(--yellow);
+    border: 1px solid var(--yellow); padding: 8px 20px; border-radius: 8px;
+    font-size: .85rem; cursor: pointer; font-weight: 600; transition: background .15s, color .15s; }
+  #retry-btn:hover { background: var(--yellow); color: #000; }
+
+  /* KaTeX math styling */
+  .katex { color: var(--text) !important; font-size: 1em; }
+  .katex-display { margin: 12px 0; overflow-x: auto; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">CDM Adaptive Tutor <span>Cognitive Decay Matrix</span></div>
+  <div id="student-badge">
+    <input id="student-input" type="text" placeholder="Enter your name…" />
+    <button id="start-btn">Start Learning</button>
+    <button id="timewarp-btn" title="Simulate 30 days passing (triggers memory decay)">⏩ +30 days</button>
+  </div>
+</header>
+
+<main>
+  <nav id="sidebar">
+    <h2>Knowledge Journey</h2>
+    <div id="journey-list">
+      <p style="color:var(--muted);font-size:.83rem;padding:8px 12px;">Enter your name to begin.</p>
+    </div>
+  </nav>
+
+  <section id="content">
+    <div id="welcome">
+      <div class="icon">🧠</div>
+      <h3>Adaptive Mathematics Tutor</h3>
+      <p>Enter your name and click <strong>Start Learning</strong> to begin your personalised journey through SPM Mathematics.</p>
+    </div>
+
+    <div id="concept-panel">
+      <div id="tab-bar">
+        <span id="concept-title"></span>
+        <button class="tab-btn active" data-tab="lesson">Lesson</button>
+        <button class="tab-btn" data-tab="question">Practice</button>
+      </div>
+
+      <!-- Lesson pane -->
+      <div id="lesson-pane" class="tab-pane active">
+        <div id="lesson-loader" class="loading-box" style="display:none">
+          <div class="spinner"></div>
+          <div class="loading-text">
+            <span class="loading-label">Generating lesson…</span>
+            <span class="loading-timer" id="lesson-timer">0s</span>
+          </div>
+        </div>
+        <div id="lesson-content"></div>
+        <button id="ask-question-btn" style="display:none">Practice this topic →</button>
+      </div>
+
+      <!-- Question pane -->
+      <div id="question-pane" class="tab-pane">
+        <!-- Shown for locked nodes -->
+        <div id="locked-notice" style="display:none">
+          <div class="lock-icon">🔒</div>
+          <h3>Prerequisites not yet met</h3>
+          <p>Complete the following topics with a passing score first:</p>
+          <div class="prereq-list" id="locked-prereq-list"></div>
+        </div>
+
+        <!-- Loading state -->
+        <div id="question-loader" class="loading-box" style="display:none">
+          <div class="spinner"></div>
+          <div class="loading-text">
+            <span class="loading-label">Generating question…</span>
+            <span class="loading-timer" id="question-timer">0s</span>
+          </div>
+        </div>
+
+        <!-- Question + answer -->
+        <div id="question-box" style="display:none">
+          <div id="question-text"></div>
+          <div id="hint-text">
+            <span class="hint-label">Hint</span> — click to reveal
+            <div id="hint-reveal"></div>
+          </div>
+        </div>
+        <div id="answer-area" style="display:none">
+          <textarea id="answer-input" placeholder="Type your answer here… (Ctrl+Enter to submit)"></textarea>
+          <button id="submit-btn">Submit Answer</button>
+        </div>
+
+        <!-- Live AI Console -->
+        <div id="ai-console">
+          <div class="console-titlebar">
+            <div class="console-dot red"></div>
+            <div class="console-dot yellow"></div>
+            <div class="console-dot green"></div>
+            <span id="console-phase-badge">CHECKING</span>
+            <span id="console-phase-label">Starting evaluation…</span>
+          </div>
+          <div id="console-body">
+            <div id="console-log"></div>
+          </div>
+        </div>
+
+        <!-- Feedback -->
+        <div id="feedback-panel">
+          <div class="feedback-header">
+            <span class="feedback-icon" id="fb-icon"></span>
+            <span class="feedback-title" id="fb-title"></span>
+          </div>
+          <div id="feedback-text"></div>
+          <div id="explanation-text"></div>
+          <div id="weight-delta"></div>
+          <div id="collapsed-warning" style="display:none"></div>
+          <div style="display:flex; gap:0; flex-wrap:wrap;">
+            <button id="retry-btn" style="display:none">↻ Try another question</button>
+            <button id="next-btn">Next concept →</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+const state = {
+  studentId: null,
+  currentNodeId: null,
+  currentNodeLocked: false,
+  currentQuestion: null,
+  journeyData: null,
+};
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const API = path => fetch(path).then(r => { if (!r.ok) return r.json().then(e => Promise.reject(e)); return r.json(); });
+const POST = (path, body) => fetch(path, {
+  method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body),
+}).then(r => { if (!r.ok) return r.json().then(e => Promise.reject(e)); return r.json(); });
+
+/** Live timer — returns a cancel function. */
+function startTimer(elId) {
+  const el = $(elId);
+  if (!el) return () => {};
+  const t0 = Date.now();
+  const iv = setInterval(() => { el.textContent = ((Date.now() - t0) / 1000).toFixed(0) + 's'; }, 500);
+  return () => clearInterval(iv);
+}
+
+/** Minimal markdown → HTML (no deps). */
+function md2html(md) {
+  if (!md) return '';
+  let h = md
+    .replace(/```[\w]*\n?([\s\S]*?)```/g, (_, c) => `<pre><code>${esc(c.trim())}</code></pre>`)
+    .replace(/`([^`]+)`/g, (_, c) => `<code>${esc(c)}</code>`)
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.+)$/gm,  '<h2>$1</h2>')
+    .replace(/^# (.+)$/gm,   '<h1>$1</h1>')
+    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
+    .replace(/^\s*[-*] (.+)$/gm, '<li>$1</li>')
+    .replace(/^\s*\d+\. (.+)$/gm, '<li>$1</li>')
+    .replace(/\n\n/g, '</p><p>')
+    .replace(/\n/g, '<br>');
+  h = '<p>' + h + '</p>';
+  h = h.replace(/(<li>[\s\S]+?<\/li>)/g, m => '<ul>' + m + '</ul>');
+  return h;
+}
+function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+/** Render LaTeX math inside an element using KaTeX auto-render. */
+function renderMath(el) {
+  if (!el) return;
+  // Wait for KaTeX scripts to load (deferred), then render
+  const doRender = () => {
+    if (window.renderMathInElement) {
+      renderMathInElement(el, {
+        delimiters: [
+          {left: '$$', right: '$$', display: true},
+          {left: '$',  right: '$',  display: false},
+          {left: '\\(', right: '\\)', display: false},
+          {left: '\\[', right: '\\]', display: true},
+        ],
+        throwOnError: false,
+      });
+    }
+  };
+  if (window._katexReady) doRender();
+  else window.addEventListener('load', doRender, {once: true});
+}
+
+// ── Journey rendering ──────────────────────────────────────────────────────
+function renderJourney(nodes) {
+  const list = $('journey-list');
+  list.innerHTML = '';
+  nodes.forEach(n => {
+    const pct = Math.round(n.live_weight_pct);
+    const item = document.createElement('div');
+    item.className = 'journey-item' +
+      (n.is_next ? ' next-up' : '') +
+      (!n.is_unlocked ? ' locked' : '') +
+      (n.node_id === state.currentNodeId ? ' active' : '');
+    item.dataset.nodeId = n.node_id;
+    item.innerHTML = `
+      <div class="ji-header">
+        <span class="ji-name">${n.is_unlocked ? '' : '🔒 '}${n.name}</span>
+        <span class="ji-pct" style="color:${statusColor(n.status)}">${pct}%</span>
+      </div>
+      <span class="ji-badge badge-${n.status}">${n.status.replace('_',' ')}</span>
+      <div class="ji-bar-wrap"><div class="ji-bar bar-${n.status}" style="width:${pct}%"></div></div>
+      <span class="next-arrow">▶ next</span>
+    `;
+    // ALL nodes clickable — locked ones just show a notice in the practice tab
+    item.addEventListener('click', () => loadConcept(n.node_id, !n.is_unlocked, n));
+    list.appendChild(item);
+  });
+}
+
+function statusColor(s) {
+  return { MASTERED:'#34d399', LEARNING:'#a78bfa', NEEDS_REVIEW:'#fbbf24', COLLAPSED:'#f87171', LOCKED:'#64748b' }[s] || '#94a3b8';
+}
+
+// ── Journey load ───────────────────────────────────────────────────────────
+async function loadJourney(autoNav = false) {
+  try {
+    const data = await API(`/journey/${state.studentId}`);
+    state.journeyData = data;
+    renderJourney(data.nodes);
+    if (autoNav && data.next_node_id) {
+      const node = data.nodes.find(n => n.node_id === data.next_node_id);
+      loadConcept(data.next_node_id, !node?.is_unlocked, node);
+    }
+  } catch (e) { console.error('Journey load failed', e); }
+}
+
+// ── Load concept ───────────────────────────────────────────────────────────
+async function loadConcept(nodeId, isLocked, nodeData) {
+  state.currentNodeId = nodeId;
+  state.currentNodeLocked = !!isLocked;
+  state.currentQuestion = null;
+
+  // Update sidebar highlight
+  document.querySelectorAll('.journey-item').forEach(el =>
+    el.classList.toggle('active', el.dataset.nodeId === nodeId));
+
+  // Show concept panel, switch to lesson tab
+  $('welcome').style.display = 'none';
+  $('concept-panel').style.display = 'flex';
+  $('concept-title').textContent = nodeData?.name || '';
+  switchTab('lesson');
+
+  // Reset lesson pane
+  $('lesson-content').innerHTML = '';
+  $('ask-question-btn').style.display = 'none';
+  $('lesson-loader').style.display = 'flex';
+  const stopTimer = startTimer('lesson-timer');
+
+  try {
+    const data = await API(`/lesson/${state.studentId}/${nodeId}`);
+    stopTimer();
+    $('lesson-loader').style.display = 'none';
+    $('lesson-content').innerHTML = md2html(data.lesson_markdown);
+    renderMath($('lesson-content'));
+    $('ask-question-btn').style.display = 'inline-block';
+  } catch (e) {
+    stopTimer();
+    $('lesson-loader').style.display = 'none';
+    $('lesson-content').innerHTML =
+      `<p style="color:var(--red)">Failed to load lesson. Is Ollama running?<br>
+       <small>${e?.detail || e}</small></p>`;
+  }
+}
+
+// ── Load question ──────────────────────────────────────────────────────────
+async function loadQuestion() {
+  const nodeId = state.currentNodeId;
+  switchTab('question');
+
+  // Reset question pane
+  $('locked-notice').style.display = 'none';
+  $('question-loader').style.display = 'none';
+  $('question-box').style.display = 'none';
+  $('answer-area').style.display = 'none';
+  $('feedback-panel').style.display = 'none';
+  $('ai-console').style.display = 'none';
+
+  // If locked, show prerequisite notice instead of generating a question
+  if (state.currentNodeLocked) {
+    const node = state.journeyData?.nodes.find(n => n.node_id === nodeId);
+    const prereqIds = node?.prereq_ids || [];
+    const prereqNames = prereqIds.map(pid => {
+      const pn = state.journeyData?.nodes.find(n => n.node_id === pid);
+      return pn ? pn.name : pid;
+    });
+    const chips = prereqNames.map(name => `<span class="prereq-chip">${name}</span>`).join('');
+    $('locked-prereq-list').innerHTML = chips || '<span class="prereq-chip">Prerequisites</span>';
+    $('locked-notice').style.display = 'block';
+    return;
+  }
+
+  // Load question
+  $('question-loader').style.display = 'flex';
+  const stopTimer = startTimer('question-timer');
+
+  try {
+    const data = await API(`/question/${state.studentId}/${nodeId}`);
+    stopTimer();
+    state.currentQuestion = data.question;
+    $('question-text').innerHTML = md2html(data.question);
+    renderMath($('question-text'));
+    $('hint-reveal').innerHTML = md2html(data.hint || 'No hint available.');
+    renderMath($('hint-reveal'));
+    $('hint-reveal').style.display = 'none';
+    $('answer-input').value = '';
+    $('submit-btn').disabled = false;
+    $('submit-btn').textContent = 'Submit Answer';
+
+    $('question-loader').style.display = 'none';
+    $('question-box').style.display = 'block';
+    $('answer-area').style.display = 'block';
+  } catch (e) {
+    stopTimer();
+    $('question-loader').style.display = 'none';
+    $('question-box').style.display = 'block';
+    $('question-text').textContent =
+      `Failed to generate question. Is Ollama running? (${e?.detail || e})`;
+  }
+}
+
+// ── AI Console helpers ──────────────────────────────────────────────────────
+function consoleSetPhase(badge, label) {
+  $('console-phase-badge').textContent = badge;
+  $('console-phase-label').textContent = label;
+}
+function consoleAppend(html) {
+  $('console-log').insertAdjacentHTML('beforeend', html);
+  const body = $('console-body');
+  body.scrollTop = body.scrollHeight;
+}
+let _thinkBlock = null;
+let _writeBlock = null;
+
+function consoleStartThinkBlock() {
+  _thinkBlock = document.createElement('div');
+  _thinkBlock.className = 'cl-block';
+  _thinkBlock.innerHTML = '<span class="cl-label thinking">THINKING</span><br><span class="cl-thinking"></span>';
+  $('console-log').appendChild(_thinkBlock);
+  _writeBlock = null;
+}
+function consoleAppendThink(token) {
+  if (!_thinkBlock) consoleStartThinkBlock();
+  _thinkBlock.querySelector('.cl-thinking').textContent += token;
+  const body = $('console-body');
+  body.scrollTop = body.scrollHeight;
+}
+function consoleStartWriteBlock() {
+  _writeBlock = document.createElement('div');
+  _writeBlock.className = 'cl-block';
+  _writeBlock.innerHTML = '<span class="cl-label writing">WRITING</span><br><span class="cl-writing"></span>';
+  $('console-log').appendChild(_writeBlock);
+  _thinkBlock = null;
+}
+function consoleAppendWrite(token) {
+  if (!_writeBlock) consoleStartWriteBlock();
+  _writeBlock.querySelector('.cl-writing').textContent += token;
+  const body = $('console-body');
+  body.scrollTop = body.scrollHeight;
+}
+
+// ── Submit answer (streaming) ───────────────────────────────────────────────
+async function submitAnswer() {
+  const answer = $('answer-input').value.trim();
+  if (!answer) { $('answer-input').focus(); return; }
+
+  $('submit-btn').disabled = true;
+  $('answer-area').style.display = 'none';
+  $('feedback-panel').style.display = 'none';
+
+  // Reset and show AI console
+  $('console-log').innerHTML = '';
+  _thinkBlock = null;
+  _writeBlock = null;
+  consoleSetPhase('CHECKING', 'Starting evaluation…');
+  $('ai-console').style.display = 'block';
+
+  let finalResult = null;
+
+  try {
+    const response = await fetch('/submit_answer_stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        student_id: state.studentId,
+        node_id: state.currentNodeId,
+        question: state.currentQuestion,
+        answer,
+      }),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw err;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        let event;
+        try { event = JSON.parse(line.slice(6)); } catch { continue; }
+
+        switch (event.phase) {
+          case 'checking':
+            consoleSetPhase('CHECKING', event.message);
+            consoleAppend(`<div class="cl-status"><span class="cl-icon">🔍</span>${event.message}</div>`);
+            break;
+          case 'correct':
+            consoleSetPhase('DONE', 'Answer is correct!');
+            consoleAppend(`<div class="cl-status"><span class="cl-icon">✅</span>Instant match — correct!</div>`);
+            break;
+          case 'thinking_start':
+            consoleSetPhase('THINKING', event.message);
+            consoleAppend(`<div class="cl-status"><span class="cl-icon">🧠</span>${event.message}</div>`);
+            consoleStartThinkBlock();
+            break;
+          case 'thinking':
+            consoleAppendThink(event.token);
+            break;
+          case 'writing':
+            if (!_writeBlock) {
+              consoleSetPhase('WRITING', 'Formulating feedback…');
+              consoleStartWriteBlock();
+            }
+            consoleAppendWrite(event.token);
+            break;
+          case 'done':
+            consoleSetPhase('DONE', 'Evaluation complete.');
+            break;
+          case 'cdm_update':
+            finalResult = event;
+            break;
+          case 'error':
+            consoleSetPhase('ERROR', event.message);
+            consoleAppend(`<div class="cl-status" style="color:var(--red)"><span class="cl-icon">❌</span>${event.message}</div>`);
+            break;
+        }
+      }
+    }
+  } catch (e) {
+    $('ai-console').style.display = 'none';
+    $('answer-area').style.display = 'block';
+    $('submit-btn').disabled = false;
+    $('submit-btn').textContent = 'Submit Answer';
+    alert(`Evaluation failed: ${e?.detail || e?.message || e}\n\nIs Ollama running?`);
+    return;
+  }
+
+  if (!finalResult) return;
+
+  const result = finalResult;
+  const panel = $('feedback-panel');
+  panel.className = result.is_correct ? 'correct' : 'incorrect';
+  $('fb-icon').textContent  = result.is_correct ? '✅' : '❌';
+  $('fb-title').textContent = result.is_correct ? 'Correct!' : 'Not quite…';
+  $('feedback-text').innerHTML    = md2html(result.feedback);
+  $('explanation-text').innerHTML = md2html(result.explanation);
+  renderMath($('feedback-panel'));
+  $('weight-delta').textContent =
+    `Mastery: ${(result.weight_before * 100).toFixed(1)}% → ${(result.weight_after * 100).toFixed(1)}%`;
+
+  const cw = $('collapsed-warning');
+  if (result.collapsed_prereqs?.length) {
+    const names = result.collapsed_prereqs.map(id => {
+      const n = state.journeyData?.nodes.find(x => x.node_id === id);
+      return n ? n.name : id;
+    }).join(', ');
+    cw.style.display = 'block';
+    cw.textContent = `⚠️ Weak foundations: ${names}. These are now prioritised in your journey.`;
+  } else {
+    cw.style.display = 'none';
+  }
+
+  panel.style.display = 'block';
+  loadJourney(false);
+
+  $('retry-btn').style.display = result.is_correct ? 'none' : 'inline-block';
+
+  if (result.next_node_id) {
+    const nextNode = state.journeyData?.nodes.find(n => n.node_id === result.next_node_id);
+    const isSameNode = result.next_node_id === state.currentNodeId;
+    $('next-btn').textContent = result.is_correct
+      ? (nextNode ? `Next: ${nextNode.name} →` : 'Next concept →')
+      : (isSameNode ? 'Continue practising →' : `Move on: ${nextNode?.name || 'Next'} →`);
+    $('next-btn').onclick = () => {
+      const nd = state.journeyData?.nodes.find(n => n.node_id === result.next_node_id);
+      loadConcept(result.next_node_id, !nd?.is_unlocked, nd);
+    };
+  } else {
+    $('next-btn').textContent = '🎉 All topics mastered!';
+    $('next-btn').onclick = null;
+  }
+}
+
+// ── Tab switching ──────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.tab-pane').forEach(p =>
+    p.classList.toggle('active', p.id === name + '-pane'));
+}
+
+// ── Event wiring ──────────────────────────────────────────────────────────
+$('start-btn').addEventListener('click', () => {
+  const name = $('student-input').value.trim();
+  if (!name) { $('student-input').focus(); return; }
+  state.studentId = name.toLowerCase().replace(/\s+/g, '_');
+  $('start-btn').textContent = 'Loading…';
+  loadJourney(true).then(() => { $('start-btn').textContent = 'Refresh'; });
+});
+
+$('student-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') $('start-btn').click();
+});
+
+$('timewarp-btn').addEventListener('click', async () => {
+  if (!state.studentId) { alert('Start a session first.'); return; }
+  const btn = $('timewarp-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Warping…';
+  try {
+    const res = await POST('/debug/time_warp', { student_id: state.studentId, days_to_skip: 30 });
+    await loadJourney(false);
+    btn.textContent = `✓ +30d (${res.records_warped} nodes decayed)`;
+    setTimeout(() => { btn.textContent = '⏩ +30 days'; btn.disabled = false; }, 3000);
+  } catch (e) {
+    alert('Time warp failed: ' + (e?.detail || e));
+    btn.textContent = '⏩ +30 days';
+    btn.disabled = false;
+  }
+});
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (btn.dataset.tab === 'question' && state.currentNodeId) {
+      loadQuestion();
+    } else if (btn.dataset.tab === 'lesson') {
+      switchTab('lesson');
+    }
+  });
+});
+
+$('ask-question-btn').addEventListener('click', loadQuestion);
+$('submit-btn').addEventListener('click', submitAnswer);
+$('retry-btn').addEventListener('click', () => {
+  $('feedback-panel').style.display = 'none';
+  $('ai-console').style.display = 'none';
+  $('answer-input').value = '';
+  $('submit-btn').disabled = false;
+  $('submit-btn').textContent = 'Submit Answer';
+  loadQuestion();
+});
+$('answer-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.ctrlKey) submitAnswer();
+});
+$('hint-text').addEventListener('click', () => {
+  const r = $('hint-reveal');
+  r.style.display = r.style.display === 'block' ? 'none' : 'block';
+});
+</script>
+</body>
+</html>
