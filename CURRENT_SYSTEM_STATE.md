@@ -37,7 +37,7 @@ W_current = W_initial × e^(−λ × Δt)
 
 ### 1.2 Weight Update Rule (on `record_attempt`)
 
-**File:** `dag_engine.py:79–113`
+**File:** `dag_engine.py:88–124`
 
 **Step 1:** Apply decay to the stored weight first:
 ```python
@@ -47,11 +47,12 @@ decayed = compute_decayed_weight(state.current_weight, days_since)
 
 **Step 2 — Success path** (`score >= SUCCESS_THRESHOLD = 0.70`):
 ```python
-new_weight = decayed + score × (1.0 − decayed)
+new_weight = decayed + (score * LEARNING_RATE * (1.0 - decayed))
 ```
-- At `decayed=0.0, score=1.0` → `new_weight = 1.0` (instant full mastery)
-- At `decayed=0.8, score=1.0` → `new_weight = 0.8 + 0.2 = 1.0`
-- At `decayed=0.8, score=0.7` → `new_weight = 0.8 + 0.14 = 0.94`
+- Custom variable `LEARNING_RATE = 0.35` ensures knowledge climbs gradually, preventing instant mastery.
+- At `decayed=0.0, score=1.0` → `new_weight = 0.350` (takes ~4 attempts to cross MASTERY_THRESHOLD=0.75)
+- At `decayed=0.35, score=1.0` → `new_weight = 0.35 + 0.2275 = 0.5775`
+- At `decayed=0.8, score=1.0` → `new_weight = 0.8 + 0.07 = 0.87`
 
 **Step 2 — Failure path** (`score < 0.70`):
 ```python
@@ -202,26 +203,26 @@ _lesson_cache: dict[str, str] = {}
 
 ### 2.5 Question Cache and Prefetch Mechanism
 
-**File:** `tutor_engine.py:38–39, 163–196`
+**File:** `tutor_engine.py:53, 191–251`
 
 ```python
 _question_cache: dict[str, dict] = {}
-# Key: concept_name (string)
+# Key: f"{concept_name}:{bucket}" where bucket is "basic", "standard", or "advanced"
 # Value: {question: str, hint: str, answer: str, _stale?: bool}
 ```
 
 **Prefetch flow:**
 1. `GET /lesson/{student_id}/{node_id}` responds with lesson content.
-2. Before returning, calls `prefetch_question(node.name, mastery_level=0.0)` — **file:** `api.py:412`.
-3. `prefetch_question()` checks if a fresh (non-stale) entry exists in `_question_cache`. If not, submits `_safe_prefetch()` to a `ThreadPoolExecutor(max_workers=2)`.
-4. `_safe_prefetch()` calls `generate_question()` which calls Ollama and caches the result.
+2. Before returning, calls `prefetch_question(node.name, mastery_level=mastery)` — **file:** `api.py:415`.
+3. `prefetch_question()` checks if a fresh (non-stale) entry exists in `_question_cache` for the appropriate difficulty bucket. If not, submits `_safe_prefetch()` to a `ThreadPoolExecutor(max_workers=2)`.
+4. `_safe_prefetch()` calls `generate_question()` which calls Ollama and caches the result under the specific bucket.
 5. By the time the student finishes reading the lesson (~12–30s of reading time), the question is already cached.
 6. `GET /question/...` returns the cached entry instantly.
 
 **Stale mechanism (after wrong answer):**
-- `submit_answer_stream` calls `invalidate_question(node.name)` when `score < 0.70`.
-- `invalidate_question()` sets `_question_cache[concept_name]["_stale"] = True`.
-- The expected `answer` value is **preserved** in the stale entry so `evaluate_answer()` can still compare it.
+- `submit_answer_stream_ep` calls `invalidate_question(node.name)` when `score < 0.70`.
+- `invalidate_question()` sets `_question_cache[key]["_stale"] = True` for all difficulty buckets of that concept.
+- The expected `answer` value is **preserved** in the stale entry so `evaluate_answer_stream()` can still compare it.
 - Next call to `generate_question()` sees `_stale=True` → bypasses cache → generates fresh question → overwrites entry without `_stale` flag.
 
 ---
@@ -322,7 +323,6 @@ Every mutating request follows this pattern:
 | `GET` | `/journey/{student_id}` | None | Full topological journey with live weights |
 | `GET` | `/lesson/{student_id}/{node_id}` | None | LLM-generated lesson (cached) + triggers question prefetch |
 | `GET` | `/question/{student_id}/{node_id}` | None | Practice question (mastery-adapted, cached) |
-| `POST` | `/submit_answer` | None | Blocking evaluation + CDM update |
 | `POST` | `/submit_answer_stream` | None | SSE streaming evaluation + CDM update |
 | `GET` | `/next/{student_id}` | None | Returns recommended next node_id |
 | `POST` | `/debug/time_warp` | None | Subtract days from all timestamps (demo tool) |
@@ -481,9 +481,7 @@ Called after: lesson load, question load, feedback panel population.
 | # | Issue | Location | Impact |
 |---|---|---|---|
 | 1 | Lesson cache never evicts — server restart clears it | `_lesson_cache` in `tutor_engine.py` | Minor: ~15s regeneration after restart |
-| 2 | `_question_cache` is per concept-name, not per student | `tutor_engine.py:129` | All students share same question |
-| 3 | One correct answer → 100% mastery instantly (W: 0→1) | `dag_engine.py:101` | Mastery too easy to achieve |
-| 4 | No authentication — any student_id string creates a new student | `api.py` | Demo-only system |
-| 5 | `get_next_node()` Priority 1 returns first collapsed prereq of first attempted node, not worst | `knowledge_journey.py:146` | Sub-optimal ordering edge case |
-| 6 | SSE endpoint `/submit_answer_stream` and blocking `/submit_answer` both exist; frontend uses stream only | `api.py` | Dead code risk for `/submit_answer` |
-| 7 | `diagnose_failure()` in `dag_engine.py` prints to stdout | `dag_engine.py:125–129` | Console noise in production |
+| 2 | `_question_cache` is shared per concept and difficulty bucket, not strictly per student | `tutor_engine.py:203` | Students at the exact same mastery bucket share questions |
+| 3 | No authentication — any student_id string creates a new student | `api.py` | Demo-only system |
+| 4 | `get_next_node()` Priority 1 returns first collapsed prereq of first attempted node, not worst | `knowledge_journey.py:146` | Sub-optimal ordering edge case |
+| 5 | `diagnose_failure()` in `dag_engine.py` prints to stdout | `dag_engine.py:125-129` | Console noise in production |
